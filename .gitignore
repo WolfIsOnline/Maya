@@ -1,3 +1,6 @@
+*.vscode
+*.mp4
+*.wav
 *.jar
 __pycache__/
 *.py[cod]

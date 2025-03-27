@@ -2,15 +2,14 @@
 Inworld Simple API Wrapper
 """
 import requests
-# pylint: disable=import-error
-# pylint: disable=no-name-in-module
+
 import wolfiebot
-from wolfiebot.database.database import Database
 
 WORKSPACE_ID = "default-firdbgosgclm_v_vu5dcnw"
 BASE_URL = "https://studio.inworld.ai"
-database = Database()
-class OpenSessionData():
+
+
+class OpenSessionData:
     """
     Data class for storing information required to open a session.
 
@@ -20,10 +19,12 @@ class OpenSessionData():
         gender (str): The gender of the user.
         age (int): The age of the user.
     """
+
     user_id: int
     name: str
     gender: str
     age: int
+
 
 class Simple_API:
     """
@@ -45,17 +46,17 @@ class Simple_API:
         url = f"{BASE_URL}/v1/workspaces/{WORKSPACE_ID}/characters/wolfie:openSession"
         headers = {
             "Content-Type": "application/json",
-            "authorization": f"Basic {wolfiebot.INWORLD_KEY}"
+            "authorization": f"Basic {wolfiebot.INWORLD_KEY}",
         }
         data = {
-            "name" : f"workspaces/{WORKSPACE_ID}/characters/wolfie",
-            "user" : {
-                "endUserId" : data.get("user_id"),
-                "givenName" : data.get("name"),
-                "gender" : data.get("gender"),
-                "role" : "member",
-                "age" : data.get("age")
-             }
+            "name": f"workspaces/{WORKSPACE_ID}/characters/wolfie",
+            "user": {
+                "endUserId": data.get("user_id"),
+                "givenName": data.get("name"),
+                "gender": data.get("gender"),
+                "role": "member",
+                "age": data.get("age"),
+            },
         }
         session = requests.post(url=url, json=data, headers=headers, timeout=10)
         return session.json()
@@ -76,7 +77,7 @@ class Simple_API:
         headers = {
             "Content-Type": "application/json",
             "authorization": f"Basic {wolfiebot.INWORLD_KEY}",
-            "Grpc-Metadata-session-id": f"{session_id}"
+            "Grpc-Metadata-session-id": f"{session_id}",
         }
         message = {"text": message}
         response = requests.post(url=url, json=message, headers=headers, timeout=10)
@@ -97,19 +98,21 @@ class Simple_API:
         url = f"{BASE_URL}/v1/workspaces/default-firdbgosgclm_v_vu5dcnw/characters/wolfie:simpleSendText"
         headers = {
             "Content-Type": "application/json",
-            "authorization": f"Basic {wolfiebot.INWORLD_KEY}"
+            "authorization": f"Basic {wolfiebot.INWORLD_KEY}",
         }
         data = {
             "character": "workspaces/default-firdbgosgclm_v_vu5dcnw/characters/wolfie",
             "text": message,
             "endUserFullname": username,
-            "endUserId": user_id
+            "endUserId": user_id,
         }
         response = requests.post(url=url, json=data, headers=headers, timeout=10)
 
         return response.json()
 
-    async def send_trigger_message(self, session_id: str, character_id: str, trigger: str):
+    async def send_trigger_message(
+        self, session_id: str, character_id: str, trigger: str
+    ):
         """
         Sends a trigger message using an existing session and character.
 
@@ -125,9 +128,11 @@ class Simple_API:
         headers = {
             "Content-Type": "application/json",
             "authorization": f"Basic {wolfiebot.INWORLD_KEY}",
-            "Grpc-Metadata-session-id": f"{session_id}"
+            "Grpc-Metadata-session-id": f"{session_id}",
         }
-        data = {"triggerEvent": { "trigger": f"workspaces/{WORKSPACE_ID}/triggers/{trigger}"}}
+        data = {
+            "triggerEvent": {"trigger": f"workspaces/{WORKSPACE_ID}/triggers/{trigger}"}
+        }
 
         response = requests.post(url=url, json=data, headers=headers, timeout=10)
         return response.json()

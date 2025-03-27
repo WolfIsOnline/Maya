@@ -1,17 +1,21 @@
 """
 Economy Commands
 """
-
-import logging
 import hikari
 import lightbulb
-# pylint: disable=no-name-in-module, import-error, unused-import
-import wolfiebot
-from wolfiebot.core.bank import Bank
 
-log = logging.getLogger(__name__)
-bank = Bank()
+import wolfiebot
+from wolfiebot import constants
+from wolfiebot.logger import Logger
+from wolfiebot.core.bank import (
+    Bank,
+    InsufficientFundsError,
+    NegativeFundsWithdrawalError,
+)
+
 plugin = lightbulb.Plugin("commands.economy")
+log = Logger(__name__, wolfiebot.LOG_LEVEL)
+
 
 @plugin.command
 @lightbulb.command("balance", "Display your balance")
@@ -28,14 +32,15 @@ async def balance(ctx: lightbulb.Context):
     The balance is formatted with the currency symbol and comma separators.
     The embedded message includes the user's display name and avatar.
     """
-    user_balance = bank.get_balance(ctx.author.id)
+    account = Bank(ctx.author.id)
     embed = hikari.Embed(
-        title = "Nocturnia Bank",
-        description=f"Available Balance: **{wolfiebot.CURRENCY_SYMBOL}{user_balance:,}**",
-        color=wolfiebot.DEFAULT_COLOR
+        title="Nocturnia Bank",
+        description=f"Available Balance: **{wolfiebot.CURRENCY_SYMBOL}{account.balance:,}**",
+        color=wolfiebot.DEFAULT_COLOR,
     )
     embed.set_author(name=f"{ctx.author}", icon=ctx.author.display_avatar_url)
     await ctx.respond(embed)
+
 
 @plugin.command
 @lightbulb.add_cooldown(length=14400, uses=1, bucket=lightbulb.UserBucket)
@@ -53,19 +58,26 @@ async def payday(ctx: lightbulb.Context):
     claims. After the deposit, a response is sent notifying the user about the
     deposited amount using the `notify` function.
     """
-    bank.deposit(ctx.author.id, wolfiebot.PAYDAY, "payday")
+    account = Bank(ctx.author.id)
+    try:
+        await account.deposit(wolfiebot.PAYDAY, "payday")
+    except NegativeFundsWithdrawalError as exc:
+        await ctx.respond(constants.NEGATIVE_AMOUNT_ERROR)
+        raise exc
+
     await ctx.respond(
         notify(
-            f"{wolfiebot.CURRENCY_SYMBOL}{wolfiebot.PAYDAY:,} has been deposited into your account"
+            f"{wolfiebot.CURRENCY_SYMBOL}{wolfiebot.PAYDAY:,} {constants.BANK_DEPOSIT}"
         )
     )
+
 
 @plugin.command
 @lightbulb.option("user", "Select the member", type=hikari.User, required=True)
 @lightbulb.option("amount", "Amount of money", type=int, required=True)
 @lightbulb.command("transfer", "Transfer money to a member", aliases="tr")
 @lightbulb.implements(lightbulb.SlashCommand, lightbulb.PrefixCommand)
-async def transfer(ctx: lightbulb.Context):
+async def transfer(ctx: lightbulb.Context) -> None:
     """
     Command to transfer money to another member.
 
@@ -80,19 +92,26 @@ async def transfer(ctx: lightbulb.Context):
     transferred amount using the `notify` function. If the transfer fails due to
     insufficient funds, a decline message is displayed.
     """
+    sender = ctx.author
+    reciever = ctx.options.user
     amount = ctx.options.amount
-    transfer_amount = bank.transfer(
-        ctx.author.id,
-        ctx.options.user.id,
-        amount,
-        f"Transfer to {ctx.options.user}",
-        f"Transfer from {ctx.author}"
+    account = Bank(sender.id)
+
+    try:
+        await account.transfer(
+            receiver_id=reciever.id,
+            amount=amount,
+            sender_statment=f"Transfer to {reciever}",
+            receiver_statment=f"Transfer from {sender}",
+        )
+    except InsufficientFundsError as exc:
+        await ctx.respond(notify(exc.message))
+        raise exc
+
+    await ctx.respond(
+        notify(f"{wolfiebot.CURRENCY_SYMBOL}{amount:,} {constants.BANK_TRANSFER}")
     )
-    if transfer_amount <= -1:
-        description = "Transfer declined (Insufficent Funds)"
-    else:
-        description = f"{wolfiebot.CURRENCY_SYMBOL}{amount:,} transfered to {ctx.options.user}"
-    await ctx.respond(notify(description))
+
 
 def notify(message):
     """
@@ -106,11 +125,9 @@ def notify(message):
       and the default color.
     """
     embed = hikari.Embed(title=message, description="", color=wolfiebot.DEFAULT_COLOR)
-    embed.set_author(
-        name="Nocturnia Bank",
-        icon=plugin.bot.get_me().display_avatar_url
-    )
+    embed.set_author(name="Nocturnia Bank", icon=plugin.bot.get_me().display_avatar_url)
     return embed
+
 
 def load(bot: lightbulb.BotApp):
     """
@@ -123,6 +140,7 @@ def load(bot: lightbulb.BotApp):
         None
     """
     bot.add_plugin(plugin)
+
 
 def unload(bot: lightbulb.BotApp):
     """

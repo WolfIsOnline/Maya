@@ -1,0 +1,17 @@
+version: '3.8' 
+
+services:
+  maya:
+    image: maya
+    container_name: maya
+    environment:
+      - TZ=America/New_York
+      - PUID=1000
+      - PGID=1000
+      - DISCORD_API_KEY=DISCORD_API_KEY
+      - MONGODB_CONNECTION=MONGODB_CONNECTION
+      - ELEVENLABS_API_KEY=ELEVENLABS_API_KEY
+      - OPENAI_API_KEY=OPENAI_API_KEY
+      - ASSISTANT_ID=ASSISTANT_ID
+
+    restart: unless-stopped

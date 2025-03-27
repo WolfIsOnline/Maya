@@ -1,18 +1,14 @@
-"""
-Quote Commands
-"""
-import logging
+"""Quotes commands"""
 import random
 from typing import List
+
 import hikari
 import lightbulb
 
-# pylint: disable=no-name-in-module, import-error, unused-import
-from wolfiebot.database.database import Database
+from wolfiebot.database.database import GuildData
 
-log = logging.getLogger(__name__)
 plugin = lightbulb.Plugin("commands.owner")
-database = Database()
+
 
 @plugin.command
 @lightbulb.option("user", "Select a member", type=hikari.User, required=False)
@@ -46,7 +42,8 @@ async def quote(ctx: lightbulb.Context):
         else:
             name = f"<@{quote_user_id}>"
 
-    await ctx.respond(f"\"{user_quote}\" - {name}")
+    await ctx.respond(f'"{user_quote}" - {name}')
+
 
 async def get_quote_from_user(user_id: int, guild_id: int) -> List[str]:
     """
@@ -59,12 +56,14 @@ async def get_quote_from_user(user_id: int, guild_id: int) -> List[str]:
     Returns:
         List[str]: A list of quotes submitted by the user within the guild.
     """
-    quotes = database.read_guild_data(guild_id=guild_id, name="quotes")
+    guild_data = GuildData(guild_id=guild_id)
+    quotes = guild_data.retrieve(name="quotes")
     user_quotes = []
     for _quote in quotes:
         if _quote.get("quote_user_id") == user_id:
             user_quotes.append(_quote.get("quote"))
     return user_quotes
+
 
 async def get_random_wildcard_quote(guild_id: int):
     """
@@ -76,9 +75,11 @@ async def get_random_wildcard_quote(guild_id: int):
     Returns:
         dict: A random wildcard quote from the guild.
     """
-    quotes = database.read_guild_data(guild_id=guild_id, name="quotes")
+    guild_data = GuildData(guild_id=guild_id)
+    quotes = guild_data.retrieve(name="quotes")
     _quote = random.choice(quotes)
     return _quote
+
 
 async def get_random_quote(quotes: List[str]) -> str:
     """
@@ -93,17 +94,16 @@ async def get_random_quote(quotes: List[str]) -> str:
     _quote = random.choice(quotes)
     return _quote
 
+
 def load(bot: lightbulb.BotApp) -> None:
     """
     Loads the plugin into the bot.
 
     Args:
         bot (lightbulb.BotApp): The bot instance.
-
-    Returns:
-        None
     """
     bot.add_plugin(plugin)
+
 
 def unload(bot: lightbulb.BotApp) -> None:
     """
@@ -111,8 +111,5 @@ def unload(bot: lightbulb.BotApp) -> None:
 
     Args:
         bot (lightbulb.BotApp): The bot instance.
-
-    Returns:
-        None
     """
     bot.remove_plugin(plugin)

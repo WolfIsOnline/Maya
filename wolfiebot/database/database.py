@@ -1,75 +1,136 @@
-"""
-DATABASE
-"""
-import logging
+"""Database Manager"""
+import threading
+from typing import Any, Optional
+
+import hikari
 from pymongo import MongoClient
-# pylint: disable=no-name-in-module, import-error
+
 import wolfiebot
+from wolfiebot.logger import Logger
 
-log = logging.getLogger(__name__)
+log = Logger(__name__, wolfiebot.LOG_LEVEL)
 
-class Database:
-    """
-    A class for interacting with a database.
 
-    This class provides functions for managing user and guild data in the database.
+class _MongoDBClient:
+    """Singleton for managing a MongoDB client connection.
+
+    Ensures only one instance of the MongoDB client is created in the application.
+    Thread safety during instance creation is ensured with threading.Lock.
 
     Attributes:
-        client: The database client instance.
+        _instance: The singleton instance of the MongoDB client.
+        _lock: Lock object for thread-safe instance creation.
+
+    Methods:
+        __new__(cls): Creates or retrieves the singleton instance.
     """
-    def __init__(self):
-        """
-        Initializes a new instance.
 
-        """
-        self.client = MongoClient(wolfiebot.MONGODB_CONNECTION)
+    _instance = None
+    _lock = threading.Lock()
 
-    def edit_user_data(self, user_id, name, value):
+    def __new__(cls):
+        """Implements singleton pattern for MongoDB client instantiation.
+
+        Returns the existing instance if available, or creates a new one.
+
+        Returns:
+            The singleton instance of _MongoDBClient.
         """
-        Edits user data with the specified name and value.
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super(_MongoDBClient, cls).__new__(cls)
+                cls._instance.client = MongoClient(wolfiebot.MONGODB_CONNECTION)
+                log.info("database connection established")
+            else:
+                log.debug("database already connected")
+        return cls._instance
+
+
+class UserData:
+    """Manages user data"""
+
+    def __init__(self, user_id: hikari.Snowflake | int) -> None:
+        """Initializes UserData instance.
 
         Args:
-            user_id (str): The ID of the user.
-            name (str): The name of the data to edit.
-            value: The new value to set.
+          user_id: Discord user ID.
         """
-        document = self.client["wolfie"]["users"]
-        document.find_one_and_update({"_id": user_id}, {"$set" : { name : value }}, upsert=True)
+        # pylint: disable=no-member
+        self.client = _MongoDBClient().client
+        self.document = self.client["wolfie"]["users"]
+        self.user_id = user_id
 
-    def append_user_data(self, user_id, name, value):
-        """
-        Appends data to a user's data with the specified name.
+    def edit(self, name: str, value: Any) -> None:
+        """Updates or creates a field with the given value in the user document.
 
         Args:
-            user_id (str): The ID of the user.
-            name (str): The name of the data to append.
-            value: The value to append.
-
+            name (str): The field name to be updated or created.
+            value (Any): The value to set for the field.
         """
-        document = self.client["wolfie"]["users"]
-        document.find_one_and_update({"_id" : user_id}, {"$push" : { name : value }}, upsert=True)
+        self.document.find_one_and_update(
+            {"_id": self.user_id}, {"$set": {name: value}}, upsert=True
+        )
 
-    # this is to long but is very specific
-    # never use this unless you have no choice
-    def remove_user_data_array_by_index(self, user_id, name, index):
+    def append(self, name: str, value: Any) -> None:
+        """Appends a value to a list field in the user document.
+
+        Args:
+            name: The field name to append to.
+            value: The value to append to the list.
+        """
+        self.document.find_one_and_update(
+            {"_id": self.user_id}, {"$push": {name: value}}, upsert=True
+        )
+
+    def delete(self, name: str) -> None:
+        """Removes a specified field from the user's document in the database.
+
+        Args:
+            name (str): Field name to be removed.
+        """
+        self.document.update_one({"_id": self.user_id}, {"$unset": {name: {}}})
+
+    def delete_element(self, name, value):
+        """Removes an element from a list field in the user document.
+
+        Args:
+            name: The field name containing the list.
+            value: The element to remove from the list.
+        """
+        self.document.find_one_and_update(
+            {"_id": self.user_id}, {"$pull": {name: value}}, upsert=True
+        )
+
+    def delete_element_by_index(self, name: str, index: int):
         """
         Removes an element from a user's data array by index.
 
         Args:
-            user_id (str): The ID of the user.
             name (str): The name of the data array.
             index (int): The index of the element to remove.
         """
-        document = self.client["wolfie"]["users"]
-
         # this is a work around for removing an array by the index
         # this can cause some future issues but for now it works
-        document.find_one_and_update({"_id" : user_id}, {"$unset": {f"{name}.{index}": 1}}, upsert=True)
-        document.find_one_and_update({"_id" : user_id}, {"$pull" : {f"{name}" : None}}, upsert=True)
+        self.document.find_one_and_update(
+            {"_id": self.user_id}, {"$unset": {f"{name}.{index}": 1}}, upsert=True
+        )
+        self.document.find_one_and_update(
+            {"_id": self.user_id}, {"$pull": {f"{name}": None}}, upsert=True
+        )
 
-    def read_user_data(self, user_id, name=None):
-        document = self.client["wolfie"]["users"]
-        raw_data = document.find({"_id" : user_id}, {})
+    def retrieve(self, name: Optional[str] = None) -> Any:
+        """Fetches a specified field's value from the user's document.
+
+        Retrieves the value of the field specified by 'name'. If 'name' is not provided,
+        or if the specified field is not found, returns None.
+
+        Args:
+            name (str, optional): The name of the field to retrieve. Defaults to None.
+
+        Returns:
+            The value of the specified field, or None if not found.
+        """
+        raw_data = self.document.find({"_id": self.user_id}, {})
         for data in raw_data:
             if name is not None:
                 is_present = name in data
@@ -78,72 +139,70 @@ class Database:
                 return data[name]
         return None
 
-    def delete_user_data(self, user_id, name):
+    def ai_edit(self, name: str, value: Any) -> None:
+        self.document.find_one_and_update(
+            {"_id": self.user_id}, {"$set": {"ai_brain." + name: value}}, upsert=True
+        )
+
+    def ai_retrieve(self):
+        raw_data = self.document.find({"_id": self.user_id}, {"ai_brain"})
+        data = []
+        for info in raw_data:
+            data.append(info)
+        return data[0]
+
+    def ai_delete(self, name: str) -> None:
+        self.document.find_one_and_update(
+            {"_id": self.user_id}, {"$unset": {f"ai_brain.{name}": ""}}
+        )
+
+
+class GuildData:
+    """Manages guild data"""
+
+    def __init__(self, guild_id):
+        # pylint: disable=no-member
+        self.client = _MongoDBClient().client
+        self.document = self.client["wolfie"]["guilds"]
+        self.guild_id = guild_id
+
+    def edit(self, name, value):
+        self.document.find_one_and_update(
+            {"_id": self.guild_id}, {"$set": {name: value}}, upsert=True
+        )
+
+    def append(self, name, value):
+        self.document.find_one_and_update(
+            {"_id": self.guild_id}, {"$push": {name: value}}, upsert=True
+        )
+
+    def delete(self, name):
+        self.document.update_one({"_id": self.guild_id}, {"$unset": {name: {}}})
+
+    def delete_element(self, name, value):
+        self.document.find_one_and_update(
+            {"_id": self.guild_id}, {"$pull": {name: value}}, upsert=True
+        )
+
+    def delete_element_by_index(self, name: str, index: int):
         """
-        Deletes user data with the specified name.
+        Removes an element from a user's data array by index.
 
         Args:
-            user_id (str): The ID of the user.
-            name (str): The name of the data to delete.
-
-        """
-        document = self.client["wolfie"]["users"]
-        document.update_one({"_id" : user_id}, { "$unset" : { name : {} } })
-
-    def edit_guild_data(self, guild_id, name, value):
-        """
-        Edits guild data with the specified name and value.
-
-        Args:
-            guild_id (str): The ID of the guild.
-            name (str): The name of the data to edit.
-            value: The new value to set.
-
-        """
-        document = self.client["wolfie"]["guilds"]
-        document.find_one_and_update({"_id": guild_id}, {"$set" : { name : value }}, upsert=True)
-
-    def append_guild_data(self, guild_id, name, value):
-        """
-        Appends data to a guild with the specified name.
-
-        Args:
-            guild_id (str): The ID of the guild.
-            name (str): The name of the data to append.
-            value: The value to append.
-
-        """
-        document = self.client["wolfie"]["guilds"]
-        document.find_one_and_update({"_id" : guild_id}, {"$push" : { name : value }}, upsert=True)
-
-    def remove_guild_data_array(self, guild_id, name, value):
-        """
-        Removes a value from an array in guild data.
-
-        Args:
-            guild_id (str): The ID of the guild.
             name (str): The name of the data array.
-            value: The value to remove from the array.
-
+            index (int): The index of the element to remove.
         """
-        document = self.client["wolfie"]["guilds"]
-        document.find_one_and_update({"_id" : guild_id}, {"$pull" : { name : value }}, upsert=True)
+        # this is a work around for removing an array by the index
+        # this can cause some future issues but for now it works
+        self.document.find_one_and_update(
+            {"_id": self.guild_id}, {"$unset": {f"{name}.{index}": 1}}, upsert=True
+        )
+        self.document.find_one_and_update(
+            {"_id": self.guild_id}, {"$pull": {f"{name}": None}}, upsert=True
+        )
 
-    def read_guild_data(self, guild_id, name=None):
-        """
-        Reads guild data or a specific named data from the guild.
-
-        Args:
-            guild_id (str): The ID of the guild.
-            name (str, optional): The name of the specific data to read (default: None).
-
-        Returns:
-            dict or any: If name is None, returns a dictionary of guild data.
-                         If name is provided and the data exists, returns the value.
-                         If name is provided and the data doesn't exist, returns None.
-        """
-        document = self.client["wolfie"]["guilds"]
-        raw_data = document.find({"_id" : guild_id}, {})
+    def retrieve(self, name=None):
+        raw_data = self.document.find({"_id": self.guild_id}, {})
         for data in raw_data:
             if name is not None:
                 is_present = name in data
@@ -151,14 +210,3 @@ class Database:
                     return None
                 return data[name]
         return raw_data
-
-    def delete_guild_data(self, guild_id, name):
-        """
-        Deletes guild data with the specified name.
-
-        Args:
-            guild_id (str): The ID of the guild.
-            name (str): The name of the data to delete.
-        """
-        document = self.client["wolfie"]["guilds"]
-        document.update_one({"_id" : guild_id}, { "$unset" : { name : {} } })

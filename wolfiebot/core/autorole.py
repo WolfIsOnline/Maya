@@ -2,16 +2,13 @@
 Auto Roles. Automatically assign roles upon joining the server
 """
 
-import logging
 import hikari
 import lightbulb
 
-# pylint: disable=no-name-in-module, import-error
-from wolfiebot.database.database import Database
+from wolfiebot.database.database import GuildData
 
-log = logging.getLogger(__name__)
 plugin = lightbulb.Plugin("core.autorole")
-database = Database()
+
 
 @plugin.listener(hikari.MemberCreateEvent)
 async def user_join(event):
@@ -28,11 +25,12 @@ async def user_join(event):
     """
     user = event.member
     guild_id = event.guild_id
-    roles = database.read_guild_data(guild_id, "autoroles")
+    roles = GuildData(guild_id=guild_id).retrieve("autoroles")
     if roles is not None:
         for _role in roles:
             role = plugin.bot.cache.get_role(_role)
             await user.add_role(role)
+
 
 def load(bot: lightbulb.BotApp):
     """

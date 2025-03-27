@@ -1,26 +1,21 @@
-"""
-Leveling System
-"""
-
-import logging
+"""Leveling System"""
 import random
 import math
+
 import lightbulb
 import hikari
-# pylint: disable=no-name-in-module, import-error, unused-import
+
 import wolfiebot
-from wolfiebot.database.database import Database
+from wolfiebot.database.database import UserData
 from wolfiebot.core.bank import Bank
 from wolfiebot.ai.simple_api import Simple_API
 
-log = logging.getLogger(__name__)
 plugin = lightbulb.Plugin("core.levels")
-database = Database()
-bank = Bank()
 simple_api = Simple_API()
 
 BASE_VALUE = 25
 EXPONENT = 1.5
+
 
 @plugin.listener(hikari.GuildMessageCreateEvent)
 async def on_message(event) -> None:
@@ -42,18 +37,25 @@ async def on_message(event) -> None:
     guild_id = event.guild_id
 
     try:
-        if content is None or content.startswith("!") or content.startswith("$") or event.is_bot is True:
+        if (
+            content is None
+            or content.startswith("!")
+            or content.startswith("$")
+            or event.is_bot is True
+        ):
             return None
 
     except AttributeError():
         pass
 
     await add_exp(user_id=user_id, increment=1)
-    await update_level(user_id=user_id, channel_id=event.get_channel().id, guild_id=guild_id)
+    await update_level(
+        user_id=user_id, channel_id=event.get_channel().id, guild_id=guild_id
+    )
     exp = await get_exp(user_id)
     level = await get_level(user_id)
     exp_needed = await get_exp_required(level + 1)
-    log.info("[user: %s] [exp: %s/%s] [level: %s]", event.author, exp, exp_needed, level)
+
 
 async def add_exp(user_id: int, increment: int) -> None:
     """
@@ -70,7 +72,8 @@ async def add_exp(user_id: int, increment: int) -> None:
     """
     exp = await get_exp(user_id=user_id)
     exp += increment
-    database.edit_user_data(user_id=user_id, name="xp", value=exp)
+    UserData(user_id=user_id).edit(name="xp", value=exp)
+
 
 async def set_exp(user_id: int, exp: int, channel_id: int, guild_id: int) -> None:
     """
@@ -84,8 +87,9 @@ async def set_exp(user_id: int, exp: int, channel_id: int, guild_id: int) -> Non
     Returns:
         None
     """
-    database.edit_user_data(user_id=user_id, name="xp", value=exp)
+    UserData(user_id=user_id).edit(name="xp", value=exp)
     await update_level(user_id=user_id, channel_id=channel_id, guild_id=guild_id)
+
 
 async def take_exp(user_id: int, increment: int) -> None:
     """
@@ -105,7 +109,8 @@ async def take_exp(user_id: int, increment: int) -> None:
     if exp < 0:
         return None
     exp -= increment
-    database.edit_user_data(user_id=user_id, name="xp", value=exp)
+    UserData(user_id=user_id).edit(name="xp", value=exp)
+
 
 async def get_exp(user_id: int) -> int:
     """
@@ -120,10 +125,11 @@ async def get_exp(user_id: int) -> int:
     Returns:
         int: The experience points of the user.
     """
-    exp = database.read_user_data(user_id=user_id, name="xp")
+    exp = UserData(user_id=user_id).retrieve(name="xp")
     if exp is None:
         exp = 0
     return exp
+
 
 async def get_level(user_id: int) -> int:
     """
@@ -138,10 +144,11 @@ async def get_level(user_id: int) -> int:
     Returns:
         int: The level of the user.
     """
-    level = database.read_user_data(user_id=user_id, name="level")
+    level = UserData(user_id=user_id).retrieve(name="level")
     if level is None:
         level = 0
     return level
+
 
 async def update_level(user_id: int, channel_id: int, guild_id: int) -> None:
     """
@@ -161,8 +168,9 @@ async def update_level(user_id: int, channel_id: int, guild_id: int) -> None:
     current_level = await get_level(user_id)
     level = await calculate_level(exp=current_exp)
     if current_level != level:
-        database.edit_user_data(user_id=user_id, name="level", value=level)
+        UserData(user_id=user_id).edit(name="level", value=level)
         await notify_level_up(user_id=user_id, channel_id=channel_id, guild_id=guild_id)
+
 
 async def notify_level_up(user_id: int, channel_id: int, guild_id: int) -> None:
     """
@@ -179,47 +187,47 @@ async def notify_level_up(user_id: int, channel_id: int, guild_id: int) -> None:
     reward = await calculate_reward(level)
     role_id = await calculate_role(level)
 
-    log.info(role_id)
     user = plugin.bot.cache.get_user(user_id)
     member = plugin.bot.cache.get_member(guild_id, user_id)
-    bank.deposit(user_id=user_id, amount=reward, statement="reward for leveling")
-    log.info(f"notify_level_up::{guild_id}")
+    account = Bank(user_id)
+    await account.deposit(amount=reward, statement="reward for leveling")
 
-    session = await simple_api.open_session({
-        user_id: user_id
-    })
+    session = await simple_api.open_session({user_id: user_id})
     session_id = session.get("name")
     character_id = session.get("sessionCharacters", [])[0].get("character", None)
 
-    response = await simple_api.send_trigger_message(session_id=session_id, character_id=character_id, trigger="level_up")
+    response = await simple_api.send_trigger_message(
+        session_id=session_id, character_id=character_id, trigger="level_up"
+    )
     text_list = response.get("textList")
     combine_text = "".join(text_list)
 
     embed = hikari.Embed(
         title="Promoted!",
         description=f"You are now level **{level}**",
-        color=wolfiebot.DEFAULT_COLOR
+        color=wolfiebot.DEFAULT_COLOR,
     )
     embed.set_author(name=user.global_name)
     embed.set_thumbnail(user.display_avatar_url)
 
     if role_id is None:
-        embed.add_field(name="Rewards: ", value=f"+{wolfiebot.CURRENCY_SYMBOL}{reward:,}")
+        embed.add_field(
+            name="Rewards: ", value=f"+{wolfiebot.CURRENCY_SYMBOL}{reward:,}"
+        )
     else:
         role = plugin.bot.cache.get_role(role_id)
         await member.add_role(role)
         embed.add_field(
             name="Rewards:",
-            value=f"**+{wolfiebot.CURRENCY_SYMBOL}{reward:,}** added\n{role.mention} given"
+            value=f"**+{wolfiebot.CURRENCY_SYMBOL}{reward:,}** added\n{role.mention} given",
         )
-
 
     await plugin.bot.rest.create_message(
         channel=channel_id,
         embed=embed,
         content=f"<@{user_id}> {combine_text}",
     )
-    log.info("ENDED")
+
 
 async def calculate_role(level: int) -> int:
     """
@@ -240,6 +248,7 @@ async def calculate_role(level: int) -> int:
 
     return roles.get(level, None)
 
+
 async def calculate_reward(level: int) -> int:
     """
     Calculates the reward amount based on the given level.
@@ -253,6 +262,7 @@ async def calculate_reward(level: int) -> int:
     additional = random.randint(100, 999)
     return (level * 1000) + additional
 
+
 async def calculate_level(exp: int) -> int:
     """
     Calculates the level based on the given experience points (exp) and user ID.
@@ -265,6 +275,7 @@ async def calculate_level(exp: int) -> int:
     """
     return math.floor((exp / BASE_VALUE) ** (1 / EXPONENT))
 
+
 async def get_exp_required(level: int) -> int:
     """
     Calculates the required experience points for the given level.
@@ -275,7 +286,8 @@ async def get_exp_required(level: int) -> int:
     Returns:
         int: The calculated required experience points.
     """
-    return math.ceil(BASE_VALUE * (level ** EXPONENT))
+    return math.ceil(BASE_VALUE * (level**EXPONENT))
+
 
 def load(bot: lightbulb.BotApp) -> None:
     """
@@ -288,6 +300,7 @@ def load(bot: lightbulb.BotApp) -> None:
         None
     """
     bot.add_plugin(plugin)
+
 
 def unload(bot: lightbulb.BotApp) -> None:
     """

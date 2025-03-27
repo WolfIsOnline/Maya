@@ -1,17 +1,11 @@
-"""
-Logging server events
-"""
-import logging
+"""Logging server events"""
 import hikari
 import lightbulb
 import pytz
 
-# pylint: disable=no-name-in-module, import-error
-from wolfiebot.database.database import Database
+from wolfiebot.database.database import GuildData
 
-log = logging.getLogger(__name__)
 plugin = lightbulb.Plugin("core.logs")
-database = Database()
 
 TIME_FORMAT = "%b %m, %Y @ %I:%M:%S%p %Z"
 TIMEZONE = "America/New_york"
@@ -34,13 +28,17 @@ async def member_join(event) -> None:
     """
     member = event.user
     guild_id = event.guild_id
-    creation_date = member.created_at.astimezone(pytz.timezone(TIMEZONE)).strftime(TIME_FORMAT)
-    embed = hikari.Embed(color=ADDITION_COLOR,
-                         title="Member Joined", description=f"{member} joined")
+    creation_date = member.created_at.astimezone(pytz.timezone(TIMEZONE)).strftime(
+        TIME_FORMAT
+    )
+    embed = hikari.Embed(
+        color=ADDITION_COLOR, title="Member Joined", description=f"{member} joined"
+    )
     embed.set_author(name=f"{member}", icon=member.display_avatar_url)
     embed.add_field(name="Account created", value=creation_date)
     embed.set_footer(text=f"Account ID: {member.id}")
-    await plugin.bot.rest.create_message(database.read_guild_data(guild_id, "logs_channel"), embed)
+    log_channel = GuildData(guild_id=guild_id).retrieve(name="logs_channel")
+    await plugin.bot.rest.create_message(log_channel, embed)
 
 
 @plugin.listener(hikari.MemberDeleteEvent)
@@ -61,11 +59,13 @@ async def member_leave(event) -> None:
         return
     except hikari.errors.NotFoundError:
         pass
-    embed = hikari.Embed(color=REMOVE_COLOR,
-                         title="Member Left", description=f"{member} has left")
+    embed = hikari.Embed(
+        color=REMOVE_COLOR, title="Member Left", description=f"{member} has left"
+    )
     embed.set_author(name=f"{member}", icon=member.display_avatar_url)
     embed.set_footer(text=f"Account ID: {member.id}")
-    await plugin.bot.rest.create_message(database.read_guild_data(guild_id, "logs_channel"), embed)
+    log_channel = GuildData(guild_id=guild_id).retrieve(name="logs_channel")
+    await plugin.bot.rest.create_message(log_channel, embed)
 
 
 @plugin.listener(hikari.GuildMessageUpdateEvent)
@@ -79,7 +79,10 @@ async def member_edit(event) -> None:
     Returns:
         None
     """
-    if event.author or event.author.is_bot is True:
+    try:
+        if event.author or event.author.is_bot is True:
+            return
+    except AttributeError:
         return
 
     member = event.author
@@ -90,7 +93,8 @@ async def member_edit(event) -> None:
     embed.add_field("New:", event.message.content)
     embed.set_author(name=f"{member}", icon=member.display_avatar_url)
     embed.set_footer(text=f"Message ID: {event.message.id}")
-    await plugin.bot.rest.create_message(database.read_guild_data(guild_id, "logs_channel"), embed)
+    log_channel = GuildData(guild_id=guild_id).retrieve(name="logs_channel")
+    await plugin.bot.rest.create_message(log_channel, embed)
 
 
 @plugin.listener(hikari.GuildMessageDeleteEvent)
@@ -109,12 +113,17 @@ async def member_delete(event) -> None:
 
     member = event.old_message.author
     guild_id = event.guild_id
-    embed = hikari.Embed(color=REMOVE_COLOR, title="Message Deleted",
-                         description=event.old_message.content)
+    embed = hikari.Embed(
+        color=REMOVE_COLOR,
+        title="Message Deleted",
+        description=event.old_message.content,
+    )
     embed.add_field("Channel:", f"<#{event.channel_id}>")
     embed.set_author(name=f"{member}", icon=member.display_avatar_url)
     embed.set_footer(text=f"Message ID: {event.old_message.id}")
-    await plugin.bot.rest.create_message(database.read_guild_data(guild_id, "logs_channel"), embed)
+    log_channel = GuildData(guild_id=guild_id).retrieve(name="logs_channel")
+    await plugin.bot.rest.create_message(log_channel, embed)
+
 
 def load(bot: lightbulb.BotApp) -> None:
     """
@@ -127,6 +136,7 @@ def load(bot: lightbulb.BotApp) -> None:
         None
     """
     bot.add_plugin(plugin)
+
 
 def unload(bot: lightbulb.BotApp) -> None:
     """

@@ -1,18 +1,14 @@
-"""
-Controls the quotes
-"""
-import logging
+"""Controls the quotes"""
 import re
 import hikari
+
 import lightbulb
 import wolfiebot
 
-# pylint: disable=no-name-in-module, import-error, unused-import
-from wolfiebot.database.database import Database
+from wolfiebot.database.database import GuildData
 
-log = logging.getLogger(__name__)
 plugin = lightbulb.Plugin("core.quotes")
-database = Database()
+
 
 def validate(quote) -> bool:
     """
@@ -33,6 +29,7 @@ def validate(quote) -> bool:
         return True
     return False
 
+
 def is_unknown(quote_user_id) -> bool:
     """
     Checks if the quote user ID is unknown.
@@ -48,6 +45,7 @@ def is_unknown(quote_user_id) -> bool:
         return False
     return True
 
+
 async def commit(content, author_id, guild_id, quote_id, ctx=None) -> None:
     """
     Commits a quote to the database and sends an embed message.
@@ -60,7 +58,7 @@ async def commit(content, author_id, guild_id, quote_id, ctx=None) -> None:
         ctx (Optional[hikari.CommandContext]): The command context (default: None).
     """
 
-    quote = re.split("\"|“|”", content)[1::2]
+    quote = re.split('"|“|”', content)[1::2]
     quote_user_id = re.split("<@|>", content)[1::2]
 
     if validate(quote) is True:
@@ -77,28 +75,32 @@ async def commit(content, author_id, guild_id, quote_id, ctx=None) -> None:
     else:
         return
 
-    database.append_guild_data(
-        guild_id, "quotes", {
+    guild_data = GuildData(guild_id=guild_id)
+    guild_data.append(
+        name="quotes",
+        value={
             "quote": quote,
             "quote_user_id": int(quote_user_id),
             "quote_user": str(quote_user),
             "submitted_user": str(submitted_user),
             "submitted_user_id": author_id,
-            "quote_id": quote_id
-        }
+            "quote_id": quote_id,
+        },
     )
-    total_quotes = len(database.read_guild_data(guild_id, "quotes"))
+    total_quotes = len(guild_data.retrieve(name="quotes"))
     embed = hikari.Embed(
         title="Quote Added",
-        description=f"\"{quote}\" - {desc_format}",
-        color=wolfiebot.DEFAULT_COLOR
+        description=f'"{quote}" - {desc_format}',
+        color=wolfiebot.DEFAULT_COLOR,
     )
 
     embed.set_author(name=f"Quote #{total_quotes}")
+    quotes_channel = guild_data.retrieve(name="quotes_channel")
     if ctx is None:
-        await plugin.bot.rest.create_message(database.read_guild_data(guild_id, "quotes_channel"), embed)
+        await plugin.bot.rest.create_message(quotes_channel, embed)
     else:
         await ctx.respond(embed)
+
 
 @plugin.listener(hikari.GuildMessageCreateEvent)
 async def listen(event):
@@ -114,17 +116,18 @@ async def listen(event):
     Raises:
         None
     """
-    channel_id = database.read_guild_data(event.guild_id, "quotes_channel")
+    channel_id = GuildData(event.guild_id).retrieve(name="quotes_channel")
     if event.channel_id != channel_id or event.is_bot is True:
         return
-    if not event.content.startswith("\"") and not event.content.startswith("“"):
+    if not event.content.startswith('"') and not event.content.startswith("“"):
         return
     await commit(
         content=event.content,
         author_id=event.author_id,
         guild_id=event.guild_id,
-        quote_id=event.message.id
+        quote_id=event.message.id,
     )
+
 
 def load(bot: lightbulb.BotApp) -> None:
     """
@@ -137,6 +140,7 @@ def load(bot: lightbulb.BotApp) -> None:
         None
     """
     bot.add_plugin(plugin)
+
 
 def unload(bot: lightbulb.BotApp) -> None:
     """

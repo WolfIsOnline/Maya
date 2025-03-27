@@ -1,83 +1,65 @@
-"""
-Casino System
-"""
-# pylint: disable=no-name-in-module, import-error
-from wolfiebot.database.database import Database
+"""Casino System"""
+import hikari
 
-database = Database()
+import wolfiebot
+from wolfiebot.database.database import UserData
+from wolfiebot.logger import Logger
 
-class Casino():
-    """
-    A class representing a casino.
+log = Logger(__name__, wolfiebot.LOG_LEVEL)
 
-    Provides methods for depositing, withdrawing, transferring funds,
-    checking balance, and generating transaction IDs.
-    """
-    def deposit(self, user_id, amount : int):
-        """
-        Deposit the specified amount into the user's casino account.
 
-        Args:
-            user_id (int): The ID of the user.
-            amount (int): The amount to be deposited.
+class InsufficientCreditsError(Exception):
+    """Exception raised when a withdrawal attempt exceeds the available balance."""
 
-        Returns:
-            None
-        """
-        balance = self.get_balance(user_id)
-        new_balance = balance + amount
-        database.edit_user_data(user_id, "casino_balance", new_balance)
+    def __init__(self, balance: int, amount: int, message: str = "InsufficientCredits"):
+        self.amount = amount
+        self.balance = balance
+        self.message = message
+        super().__init__(self.message)
 
-    def withdraw(self, user_id, amount : int) -> int:
-        """
-        Withdraw the specified amount from the user's casino account.
+    def __str__(self):
+        return f'{self.message}: amount "{self.amount}" > "{self.balance}"'
 
-        Args:
-            user_id (int): The ID of the user.
-            amount (int): The amount to be withdrawn.
 
-        Returns:
-            int: The amount that was successfully withdrawn,
-            or -1 if the withdrawal is not possible.
+class NegativeCreditsError(ValueError):
+    """Exception raised when a withdrawal amount is negative."""
 
-        """
-        if self.is_sufficient(user_id, amount) is False:
-            return -1
-        balance = self.get_balance(user_id)
-        new_balance = balance - amount
-        database.edit_user_data(user_id, "casino_balance", new_balance)
+    def __init__(self, amount, message="NegativeWithdrawal"):
+        self.amount = amount
+        self.message = message
+        super().__init__(self.message)
+
+    def __str__(self):
+        return f'{self.message}: amount "{self.amount}" is < 0'
+
+
+class Casino:
+    def __init__(self, user_id: hikari.Snowflake | int):
+        self.user_data = UserData(user_id=user_id)
+        self.user_id = user_id
+        self.balance = self.get_balance()
+
+    def deposit(self, amount: int):
+        if amount < 0:
+            raise NegativeCreditsError(amount=amount)
+
+        new_balance = self.balance + amount
+        self.user_data.edit(name="casino_balance", value=new_balance)
+
+    def withdraw(self, amount: int) -> int:
+        if amount < 0:
+            raise NegativeCreditsError(amount=amount)
+
+        if amount > self.balance:
+            raise InsufficientCreditsError(balance=self.balance, amount=amount)
+
+        new_balance = self.balance - amount
+        self.user_data.edit(name="casino_balance", value=new_balance)
         return amount
 
-    def is_sufficient(self, user_id, amount : int) -> bool:
-        """
-        Check if the user's casino account has sufficient balance for a withdrawal.
-
-        Args:
-            user_id (int): The ID of the user.
-            amount (int): The amount to be withdrawn.
-
-        Returns:
-            bool: True if the account has sufficient balance, False otherwise.
-
-        """
-        balance = self.get_balance(user_id)
-        if balance >= amount:
-            return True
-        return False
-
-    def get_balance(self, user_id) -> int:
-        """
-        Get the current balance in the user's casino account.
-
-        Args:
-            user_id (int): The ID of the user.
-
-        Returns:
-            int: The current balance in the casino account.
-
-        """
-        balance = database.read_user_data(user_id, "casino_balance")
+    def get_balance(self) -> int:
+        balance = self.user_data.retrieve(name="casino_balance")
         if balance is None:
-            database.edit_user_data(user_id, "casino_balance", 0)
+            self.user_data.edit(name="casino_balance", value=0)
             balance = 0
         return balance

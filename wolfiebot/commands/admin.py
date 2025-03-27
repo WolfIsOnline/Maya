@@ -1,23 +1,19 @@
 """
 Admin Commands
 """
-
-import logging
 import hikari
 import lightbulb
 from hikari.permissions import Permissions
-# pylint: disable=no-name-in-module, import-error
-import wolfiebot
-from wolfiebot.database.database import Database
 
-log = logging.getLogger(__name__)
+import wolfiebot
+from wolfiebot.database.database import GuildData
+
 plugin = lightbulb.Plugin("commands.admin")
-database = Database()
+
 
 @plugin.command
 @lightbulb.command("admin", "Admin commands")
 @lightbulb.implements(lightbulb.PrefixCommandGroup, lightbulb.SlashCommandGroup)
-# pylint: disable=unused-argument
 async def admin(ctx: lightbulb.Context) -> None:
     """
     Admin group
@@ -29,6 +25,7 @@ async def admin(ctx: lightbulb.Context) -> None:
         None
     """
     return None
+
 
 @admin.child
 @lightbulb.add_checks(lightbulb.owner_only)
@@ -46,6 +43,7 @@ async def _set(ctx: lightbulb.Context):
         None
     """
     return None
+
 
 @admin.child
 @lightbulb.add_checks(lightbulb.owner_only)
@@ -70,9 +68,12 @@ async def _lock(ctx: lightbulb.Context) -> None:
                 type=hikari.channels.PermissionOverwriteType.ROLE,
                 deny=(Permissions.SEND_MESSAGES),
             )
-        ]
+        ],
     )
-    await ctx.respond(notify(f"{ctx.get_channel().mention} locked! :closed_lock_with_key:"))
+    await ctx.respond(
+        notify(f"{ctx.get_channel().mention} locked! :closed_lock_with_key:")
+    )
+
 
 @admin.child
 @lightbulb.add_checks(lightbulb.owner_only)
@@ -97,9 +98,10 @@ async def _unlock(ctx: lightbulb.Context) -> None:
                 type=hikari.channels.PermissionOverwriteType.ROLE,
                 allow=(Permissions.SEND_MESSAGES),
             )
-        ]
+        ],
     )
     await ctx.respond(notify(f"{ctx.get_channel().mention} unlocked! :unlock:"))
+
 
 @_set.child
 @lightbulb.option("channel", "Text channel", type=hikari.TextableChannel, required=True)
@@ -116,11 +118,15 @@ async def quotes(ctx: lightbulb.Context) -> None:
         None
     """
     channel = ctx.options.channel
-    database.edit_guild_data(ctx.get_guild().id, "quotes_channel", channel.id)
+    guild_data = GuildData(guild_id=ctx.get_guild().id)
+    guild_data.edit(name="quotes_channel", value=channel.id)
     await ctx.respond(notify(f"Quotes channel set to {channel.mention}"))
 
+
 @_set.child
-@lightbulb.option("channel", "Voice channel", type=hikari.GuildVoiceChannel, required=True)
+@lightbulb.option(
+    "channel", "Voice channel", type=hikari.GuildVoiceChannel, required=True
+)
 @lightbulb.command("room", "Set parent room channel")
 @lightbulb.implements(lightbulb.SlashSubCommand, lightbulb.PrefixSubCommand)
 async def room(ctx: lightbulb.Context) -> None:
@@ -134,8 +140,10 @@ async def room(ctx: lightbulb.Context) -> None:
         None
     """
     channel = ctx.options.channel
-    database.edit_guild_data(ctx.get_guild().id, "autoroom_parent", channel.id)
+    guild_data = GuildData(guild_id=ctx.get_guild().id)
+    guild_data.edit(name="autoroom_parent", value=channel.id)
     await ctx.respond(notify(f"Parent channel set to {channel.mention}"))
+
 
 @_set.child
 @lightbulb.option("channel", "Text channel", type=hikari.TextableChannel, required=True)
@@ -152,11 +160,15 @@ async def logs(ctx: lightbulb.Context) -> None:
         None
     """
     channel = ctx.options.channel
-    database.edit_guild_data(ctx.get_guild().id, "logs_channel", channel.id)
+    guild_data = GuildData(guild_id=ctx.get_guild().id)
+    guild_data.edit(name="logs_channel", value=channel.id)
     await ctx.respond(notify(f"Logs channel set to {channel.mention}"))
 
+
 @_set.child
-@lightbulb.option("channel", "Select the welcome channel", type=hikari.TextableChannel, required=True)
+@lightbulb.option(
+    "channel", "Select the welcome channel", type=hikari.TextableChannel, required=True
+)
 @lightbulb.command("welcome", "Set the welcome channel")
 @lightbulb.implements(lightbulb.SlashSubCommand, lightbulb.PrefixSubCommand)
 async def welcome(ctx: lightbulb.Context) -> None:
@@ -170,8 +182,10 @@ async def welcome(ctx: lightbulb.Context) -> None:
         None
     """
     channel = ctx.options.channel
-    database.edit_guild_data(ctx.get_guild().id, "welcome_channel", channel.id)
+    guild_data = GuildData(guild_id=ctx.get_guild().id)
+    guild_data.edit(name="welcome_channel", value=channel.id)
     await ctx.respond(notify(f"Welcome channel set to {channel.mention}"))
+
 
 @admin.child
 @lightbulb.option("message_id", "Input the message ID", type=str, required=True)
@@ -187,9 +201,14 @@ async def save_quote(ctx: lightbulb.Context) -> None:
     Returns:
         None
     """
-    message = await plugin.bot.rest.fetch_message(ctx.channel_id, ctx.options.message_id)
+    message = await plugin.bot.rest.fetch_message(
+        ctx.channel_id, ctx.options.message_id
+    )
     # pylint: disable=no-member
-    await wolfiebot.core.quotes.commit(message.content, message.author.id, ctx.get_guild().id, ctx)
+    await wolfiebot.core.quotes.commit(
+        message.content, message.author.id, ctx.get_guild().id, ctx
+    )
+
 
 @admin.child
 @lightbulb.option("role", "Select the role", type=hikari.Role)
@@ -206,14 +225,16 @@ async def add_role(ctx: lightbulb.Context) -> None:
         None
     """
     role = ctx.options.role
-    roles = database.read_guild_data(ctx.get_guild().id, "autoroles")
+    guild_data = GuildData(ctx.get_guild().id)
+    roles = guild_data.retrieve(name="autoroles")
     if roles is not None:
         for _role in roles:
             if _role == role.id:
                 await ctx.respond(f"{role.mention} has already been added!")
                 return
-    database.append_guild_data(ctx.get_guild().id, "autoroles", role.id)
+    guild_data.append(name="autoroles", value=role.id)
     await ctx.respond(notify(f"{role.mention} added"))
+
 
 @admin.child
 @lightbulb.option("role", "Select the role", type=hikari.Role)
@@ -230,8 +251,10 @@ async def remove_role(ctx: lightbulb.Context) -> None:
         None
     """
     role = ctx.options.role
-    database.remove_guild_data_array(ctx.get_guild().id, "autoroles", role.id)
+    guild_data = GuildData(guild_id=ctx.get_guild().id)
+    guild_data.delete_element(name="autoroles", value=role.id)
     await ctx.respond(notify(f"{role.mention} removed"))
+
 
 def notify(message: str) -> hikari.Embed:
     """
@@ -243,9 +266,10 @@ def notify(message: str) -> hikari.Embed:
     Returns:
         hikari.Embed: The notification embed.
     """
-    embed = hikari.Embed(title=message, description="", color=0xff0000)
+    embed = hikari.Embed(title=message, description="", color=0xFF0000)
     embed.set_author(name="Admin Tools", icon=plugin.bot.get_me().display_avatar_url)
     return embed
+
 
 def load(bot: lightbulb.BotApp) -> None:
     """
@@ -258,6 +282,7 @@ def load(bot: lightbulb.BotApp) -> None:
         None
     """
     bot.add_plugin(plugin)
+
 
 def unload(bot: lightbulb.BotApp) -> None:
     """

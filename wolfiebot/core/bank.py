@@ -1,92 +1,113 @@
-"""
-Banking System
-"""
-import logging
+"""Banking System"""
 import uuid
 import datetime
 
-# pylint: disable=no-name-in-module, import-error
-from wolfiebot.database.database import Database
+import wolfiebot
+from wolfiebot.database.database import UserData
+from wolfiebot.logger import Logger
 
-database = Database()
-log = logging.getLogger(__name__)
+
+log = Logger(__name__, wolfiebot.LOG_LEVEL)
+
+
+class InsufficientFundsError(Exception):
+    """Exception raised when a withdrawal attempt exceeds the available balance."""
+
+    def __init__(self, amount: int, balance: int, message: str = "InsufficientFunds"):
+        self.amount = amount
+        self.balance = balance
+        self.message = message
+        super().__init__(self.message)
+
+    def __str__(self):
+        return f'{self.message}: amount "{self.amount}" > "{self.balance}"'
+
+
+class NegativeFundsWithdrawalError(ValueError):
+    """Exception raised when a withdrawal amount is negative."""
+
+    def __init__(self, amount, message="NegativeWithdrawal"):
+        self.amount = amount
+        self.message = message
+        super().__init__(self.message)
+
+    def __str__(self):
+        return f'{self.message}: amount "{self.amount}" is < 0'
+
 
 class Bank:
     """
     A class representing a bank.
 
     Provides methods for depositing, withdrawing, transferring funds,
-    checking balance, and generating transaction IDs.
+    and checking balance
     """
-    def deposit(self, user_id, amount : int, statement : str):
-        """
-        Deposit funds into the user's account and record the transaction.
+
+    def __init__(self, user_id):
+        self.user_data = UserData(user_id=user_id)
+        self.user_id = user_id
+        self.balance = self.get_balance()
+
+    async def deposit(self, amount: int, statement: str) -> None:
+        """Deposit funds into the user's account and record the transaction.
 
         Args:
-            user_id (Any): The ID of the user.
             amount (int): The amount to deposit.
             statement (str): A statement describing the deposit transaction.
 
-        Returns:
-            None
         """
-        balance = self.get_balance(user_id)
-        new_balance = balance + amount
+        if amount < 0:
+            raise NegativeFundsWithdrawalError
 
-        transaction_id = self.get_id()
+        new_balance = self.balance + amount
+        transaction_id = uuid.uuid4().hex
         data = {
             "id": transaction_id,
-            "amount" : amount,
-            "date" : datetime.datetime.now(),
-            "type" : "deposit",
-            "statement" : statement
+            "amount": amount,
+            "date": datetime.datetime.now(),
+            "type": "deposit",
+            "statement": statement,
         }
+        self.user_data.append(name="transactions", value=data)
+        self.user_data.edit(name="balance", value=new_balance)
 
-        database.append_user_data(user_id, "transactions", data)
-        database.edit_user_data(user_id, "balance", new_balance)
+    async def withdraw(self, amount: int, statement: str) -> int:
+        """Withdraw funds from the user's account if sufficient balance is available.
 
-    def withdraw(self, user_id, amount : int, statement : str) -> int:
-        """
-        Withdraw funds from the user's account and record the transaction.
+        Raises InsufficientFundsError if withdrawal amount exceeds available balance.
+        Records the transaction by updating the user's balance and transaction history.
 
         Args:
-            user_id (Any): The ID of the user.
-            amount (int): The amount to withdraw.
-            statement (str): A statement describing the withdrawal transaction.
+          amount (int): The amount to withdraw.
+          statement (str): A statement describing the withdrawal.
 
         Returns:
-            int: The withdrawn amount if the withdrawal is successful, otherwise -1.
+          int: amount withdrawn
         """
-        if self.is_sufficient(user_id, amount) is False:
-            return -1
-        balance = self.get_balance(user_id)
-        new_balance = balance - amount
+        if amount > self.balance:
+            raise InsufficientFundsError(amount=amount, balance=self.balance)
 
-        transaction_id = self.get_id()
+        new_balance = self.balance - amount
+
+        transaction_id = uuid.uuid4().hex
         data = {
             "id": transaction_id,
             "amount": amount,
             "date": datetime.datetime.now(),
             "type": "withdraw",
-            "statement": statement
+            "statement": statement,
         }
-        database.append_user_data(user_id, "transactions", data)
-        database.edit_user_data(user_id, "balance", new_balance)
+        self.user_data.append(name="transactions", value=data)
+        self.user_data.edit(name="balance", value=new_balance)
         return amount
 
-    def transfer(
-        self,
-        sender_id,
-        receiver_id,
-        amount : int,
-        sender_statment,
-        receiver_statment
-    ) -> int:
+    async def transfer(
+        self, receiver_id, amount: int, sender_statment: str, receiver_statment: str
+    ) -> int | str:
         """
         Transfer funds from one user's account to another and record the transactions.
 
         Args:
-            sender_id (Any): The ID of the sender.
             receiver_id (Any): The ID of the receiver.
             amount (int): The amount to transfer.
             sender_statement (str): A statement from the sender's perspective.
@@ -95,29 +116,22 @@ class Bank:
         Returns:
             int: The transferred amount if the transfer is successful, otherwise -1.
         """
-        confirmed_amount = self.withdraw(sender_id, amount, sender_statment)
-        if confirmed_amount <= -1:
-            return -1
-        self.deposit(receiver_id, confirmed_amount, receiver_statment)
+        receiver_account = Bank(receiver_id)
+
+        try:
+            confirmed_amount = await self.withdraw(
+                amount=amount, statement=sender_statment
+            )
+        except InsufficientFundsError as exc:
+            log.error(exc)
+            raise exc
+
+        await receiver_account.deposit(
+            amount=confirmed_amount, statement=receiver_statment
+        )
         return confirmed_amount
 
-    def is_sufficient(self, user_id, amount : int) -> bool:
-        """
-        Check if the user has sufficient balance to perform a withdrawal.
-
-        Args:
-            user_id (Any): The ID of the user.
-            amount (int): The amount to withdraw.
-
-        Returns:
-            bool: True if the user has sufficient balance, False otherwise.
-        """
-        balance = self.get_balance(user_id)
-        if balance >= amount:
-            return True
-        return False
-
-    def get_balance(self, user_id) -> int:
+    def get_balance(self) -> int:
         """
         Get the balance of the user.
 
@@ -127,17 +141,8 @@ class Bank:
         Returns:
             int: The balance of the user.
         """
-        balance = database.read_user_data(user_id, "balance")
+        balance = self.user_data.retrieve("balance")
         if balance is None:
-            database.edit_user_data(user_id, "balance", 0)
+            self.user_data.edit(name="balance", value=0)
             balance = 0
         return balance
-
-    def get_id(self) -> str:
-        """
-        Generate a unique transaction ID.
-
-        Returns:
-            str: A unique transaction ID.
-        """
-        return uuid.uuid4().hex

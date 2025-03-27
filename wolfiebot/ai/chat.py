@@ -1,103 +1,72 @@
-"""
-AI Chat Module
-"""
+"""Listeners"""
 
-import logging
 import re
+
 import hikari
 import lightbulb
 
-# pylint: disable=import-error
-# pylint: disable=no-name-in-module
-from wolfiebot.database.database import Database
-from wolfiebot.ai.simple_api import Simple_API
+import wolfiebot
+from wolfiebot.ai.ai_manager import AIManager
+from wolfiebot.ai.voice_manager import VoiceManager
+from wolfiebot.database.database import UserData
+from wolfiebot.logger import Logger
 
 plugin = lightbulb.Plugin("ai.chat")
-log = logging.getLogger(__name__)
-database = Database()
-simple_api = Simple_API()
+log = Logger(__name__, wolfiebot.LOG_LEVEL)
 
-SCENE_ID = "workspaces/default-firdbgosgclm_v_vu5dcnw/scenes/discord"
-CHARACTER_ID = "-1"
 
 @plugin.listener(hikari.GuildMessageCreateEvent)
-async def guild_listen(event) -> None:
-    """
-    Listens for guild message create events and handles mentions of the bot user.
+async def guild_channel(event) -> None:
+    if event.author_id == plugin.bot.get_me().id:
+        return
 
-    Args:
-        event (hikari.GuildMessageCreateEvent): The event object
-    """
     if plugin.bot.get_me().id in event.message.user_mentions:
         user = plugin.bot.cache.get_member(event.guild_id, event.author.id)
         name = user.nickname
         if name is None:
             name = user
-        await chat(event=event, username=name, user_id=user.id, is_dm=False)
+        await chat(event)
+
 
 @plugin.listener(hikari.DMMessageCreateEvent)
-async def direct_listen(event) -> None:
-    """
-    Listens for direct message create events and handles messages received from users.
-
-    Args:
-        event (hikari.DMMessageCreateEvent): The event object
-    """
+async def direct_message(event) -> None:
     if event.author_id == plugin.bot.get_me().id:
         return
-    await chat(event=event, username=event.author, user_id=event.author.id, is_dm=True)
 
-async def chat(event, username: str, user_id: int, is_dm: bool) -> None:
-    """
-    Initiates a chat session and processes the chat response.
+    await chat(event)
 
-    Args:
-        event (hikari.MessageCreateEvent): The message create event.
-        username (str): The username of the user.
-        user_id (int): The ID of the user.
-        is_dm (bool): Indicates if the chat is in a direct message.
-    """
-    channel_id = event.channel_id
-    session_id = database.read_user_data(user_id=user_id, name="session_id")
-    character_id = database.read_user_data(user_id=user_id, name="character_id")
-    message = re.sub(r"<.*?>", "", event.message.content)
-    await plugin.bot.rest.trigger_typing(channel_id)
-    reply = await simple_api.send_message(
-        message=message,
-        session_id=session_id,
-        character_id=character_id
-    )
-    if reply.get("code") == 9 or reply.get("code") == 5:
-        log.info("session invalid creating new")
-        session = await simple_api.open_session({
-            "user_id" : str(user_id),
-            "name" : str(username),
-            "gender" : "male",
-            "age" : 23
-        })
-        session_id = session.get("name")
-        character_id = session.get("sessionCharacters", [])[0].get("character", None)
-        await update_session_id(user_id=user_id, session_id=session_id, character_id=character_id)
-        return await chat(event, username, user_id, is_dm)
-    text_list = reply.get("textList")
-    combine_text = "".join(text_list)
-    await event.app.rest.create_message(
-        channel=channel_id,
-        content=combine_text,
-        reply=event.message
+
+async def chat(event) -> None:
+    message = _sanatize_message(event.message.content)
+    attachments = event.message.attachments
+    if message.startswith("!"):
+        return
+
+    ai_manager = AIManager(event.author.id)
+    async with plugin.bot.rest.trigger_typing(event.channel_id):
+        reply = await ai_manager.send_message(text=message, attachment=attachments)
+        user = UserData(plugin.bot.get_me().id)
+        video = None
+        if user.retrieve("voice_state") is True:
+            voice = VoiceManager(reply)
+            voice.generate_reply()
+            voice.save_audio()
+            voice.convert_to_video()
+            video = hikari.File(voice.OUTPUT_PATH)
+
+    if reply is None or reply == "":
+        return
+
+    await plugin.bot.rest.create_message(
+        channel=event.channel_id, content=reply, reply=event.message, attachment=video
     )
 
-async def update_session_id(user_id: int, session_id: str, character_id: str) -> None:
-    """
-    Updates the session ID and character ID for a user.
 
-    Args:
-        user_id (int): The ID of the user.
-        session_id (str): The new session ID to be updated.
-        character_id (str): The new character ID to be updated.
-    """
-    database.edit_user_data(user_id=user_id, name="session_id", value=session_id)
-    database.edit_user_data(user_id=user_id, name="character_id", value=character_id)
+def _sanatize_message(message: str):
+    if message is None or message == "":
+        return ""
+    return re.sub(r"<.*?>", "", message)
+
 
 def load(bot: lightbulb.BotApp) -> None:
     """
@@ -107,6 +76,7 @@ def load(bot: lightbulb.BotApp) -> None:
         bot (lightbulb.BotApp): The bot instance to load the plugin into.
     """
     bot.add_plugin(plugin)
+
 
 def unload(bot: lightbulb.BotApp) -> None:
     """

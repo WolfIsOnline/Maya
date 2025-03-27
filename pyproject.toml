@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "wolfiebot"
+version = "2.3.0"
+description = ""
+authors = ["WolfIsOnline"]
+license = "MIT License"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.13"
+elevenlabs = "^1.0.3"
+hikari = "^2.0.0.dev122"
+moviepy = "^1.0.3"
+openai = "^1.14.3"
+psutil = "^5.9.8"
+pymongo = "^4.6.3"
+pytz = "^2024.1"
+requests = "^2.31.0"
+uvloop = "^0.19.0"
+python-dotenv = "^1.0.1"
+hikari-lightbulb = "^2.3.5"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

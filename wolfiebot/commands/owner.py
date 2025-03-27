@@ -1,49 +1,25 @@
-"""
-Owner Commands
-"""
-
-import logging
+"""Owner Commands"""
 import hikari
 import lightbulb
 
-# pylint: disable=no-name-in-module, import-error, unused-import
-from wolfiebot.database.database import Database
+from wolfiebot.database.database import GuildData
 
-log = logging.getLogger(__name__)
 plugin = lightbulb.Plugin("commands.owner")
-database = Database()
+
 
 @plugin.command
 @lightbulb.command("owner", "Owner commands")
 @lightbulb.implements(lightbulb.PrefixCommandGroup, lightbulb.SlashCommandGroup)
-# pylint: disable=unused-argument
-async def owner(ctx: lightbulb.Context):
-    """
-    Handles owner commands.
-
-    Args:
-        ctx (lightbulb.Context): The context object representing the invocation.
-
-    Returns:
-        None:
-    """
+async def owner():
     return None
+
 
 @owner.child
 @lightbulb.command("set", "Set commands")
 @lightbulb.implements(lightbulb.PrefixSubGroup, lightbulb.SlashSubGroup)
-# pylint: disable=unused-argument
-async def _set(ctx: lightbulb.Context):
-    """
-    Handles owner set commands.
-
-    Args:
-        ctx (lightbulb.Context): The context object representing the invocation.
-
-    Returns:
-        None:
-    """
+async def _set():
     return None
+
 
 @_set.child
 @lightbulb.option("role", "Select the admin role", type=hikari.Role, required=True)
@@ -64,8 +40,10 @@ async def set_admin(ctx: lightbulb.Context):
         return
 
     role = ctx.options.role
-    database.edit_guild_data(ctx.get_guild().id, "admin_role", role.id)
+    guild_data = GuildData(guild_id=ctx.get_guild().id)
+    guild_data.edit("admin_role", role.id)
     await ctx.respond(notify(f"Admin role set {role.name}"))
+
 
 def notify(message):
     """
@@ -77,7 +55,7 @@ def notify(message):
     Returns:
         hikari.Embed: The embed object with the provided message.
     """
-    embed = hikari.Embed(title=message, description="", color=0x00bfff)
+    embed = hikari.Embed(title=message, description="", color=0x00BFFF)
     embed.set_author(name="Owner Tools", icon=plugin.bot.get_me().display_avatar_url)
     return embed
 
@@ -91,6 +69,7 @@ def load(bot: lightbulb.BotApp):
 
     """
     bot.add_plugin(plugin)
+
 
 def unload(bot: lightbulb.BotApp):
     """
