@@ -1,6 +1,10 @@
 import asyncio
-
 from maya import bot
 
-if __name__ == "__main__":
+
+def main():
     asyncio.run(bot.main())
+
+
+if __name__ == "__main__":
+    main()
