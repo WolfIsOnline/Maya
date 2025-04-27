@@ -2,8 +2,8 @@ from typing import Optional
 
 import requests
 
-from frontend.discord.core.logs import log
-from frontend.discord import BACKEND_URL
+from frontend.maya.core.logs import log
+from frontend.maya import BACKEND_URL
 
 TIMEOUT = 10
 
