@@ -1,9 +1,69 @@
 import datetime
 import re
+import json
+import os
 from collections import defaultdict
 
 import discord
 from discord.ext import commands
+from maya.core.logs import log
+
+POLL_FILE = "polls.json"
+
+
+def load_polls():
+    """Load poll data from JSON file."""
+    if os.path.exists(POLL_FILE):
+        with open(POLL_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def save_poll_data(
+    message_id,
+    channel_id,
+    question,
+    options,
+    allow_multiple,
+    expiration,
+    votes,
+    user_votes,
+):
+    """Save poll data to JSON file."""
+    polls = load_polls()
+    polls[str(message_id)] = {
+        "message_id": message_id,
+        "channel_id": channel_id,
+        "question": question,
+        "options": options,
+        "allow_multiple": allow_multiple,
+        "expiration": expiration.isoformat(),
+        "votes": dict(votes),
+        "user_votes": {str(k): v for k, v in user_votes.items()},
+    }
+    with open(POLL_FILE, "w", encoding="utf-8") as f:
+        json.dump(polls, f, indent=2)
+
+
+def update_poll_votes(message_id, votes, user_votes):
+    """Update votes in JSON file."""
+    polls = load_polls()
+    if str(message_id) in polls:
+        polls[str(message_id)]["votes"] = dict(votes)
+        polls[str(message_id)]["user_votes"] = {
+            str(k): v for k, v in user_votes.items()
+        }
+        with open(POLL_FILE, "w", encoding="utf-8") as f:
+            json.dump(polls, f, indent=2)
+
+
+def remove_poll_data(message_id):
+    """Remove poll data from JSON file."""
+    polls = load_polls()
+    if str(message_id) in polls:
+        del polls[str(message_id)]
+        with open(POLL_FILE, "w", encoding="utf-8") as f:
+            json.dump(polls, f, indent=2)
 
 
 class PollModal(discord.ui.Modal):
@@ -11,7 +71,6 @@ class PollModal(discord.ui.Modal):
 
     def __init__(self):
         super().__init__(title="Create a Poll")
-
         self.add_item(
             discord.ui.InputText(
                 label="Poll Question",
@@ -42,7 +101,7 @@ class PollModal(discord.ui.Modal):
         self.add_item(
             discord.ui.InputText(
                 label="Poll Duration (e.g., 30m, 11h, 3d)",
-                placeholder="Enter duration (e.g., 30m for minutes, 11h for hours, 3d for days)",
+                placeholder="Enter duration (e.g., 30m, 11h, 3d)",
                 style=discord.InputTextStyle.short,
                 required=True,
                 max_length=10,
@@ -68,12 +127,11 @@ class PollModal(discord.ui.Modal):
             return
         number = int(match.group(1))
         unit = match.group(2)
-        if unit == "m":
-            duration = number * 60
-        elif unit == "h":
-            duration = number * 3600
-        else:
-            duration = number * 86400
+        duration = (
+            number * 60
+            if unit == "m"
+            else number * 3600 if unit == "h" else number * 86400
+        )
 
         if duration > 604800:
             await interaction.response.send_message(
@@ -99,7 +157,6 @@ class PollModal(discord.ui.Modal):
             return
 
         select_options = [discord.SelectOption(label=opt) for opt in option_list]
-
         expiration = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
             seconds=duration
         )
@@ -111,8 +168,21 @@ class PollModal(discord.ui.Modal):
         await interaction.response.send_message(
             f"**{question}**\nPoll ends: {expiration_str}", view=view, ephemeral=False
         )
+        view.message = await interaction.original_response()
+
+        save_poll_data(
+            message_id=view.message.id,
+            channel_id=interaction.channel_id,
+            question=question,
+            options=option_list,
+            allow_multiple=allow_multiple,
+            expiration=expiration,
+            votes=view.votes,
+            user_votes=view.user_votes,
+        )
 
     async def on_error(self, error: Exception, interaction: discord.Interaction):
+        log.error("PollModal error: %s", str(error))
         if not interaction.response.is_done():
             await interaction.response.send_message(
                 "An error occurred while processing the poll. Please try again.",
@@ -135,17 +205,10 @@ class AnonPolling(discord.ui.View):
         self.expiration = expiration
         self.votes = defaultdict(int)
         self.user_votes = {}
+        log.info("Initialized poll: %s, timeout: %ss", question, timeout)
         self.add_item(self.create_select_menu(allow_multiple))
 
     def create_select_menu(self, allow_multiple: bool):
-        """Select menu setup using discords built-in select menu
-
-        Args:
-            allow_multiple (bool): allow multiple options or not
-
-        Returns:
-            discord.ui.Select: the select object
-        """
         select = discord.ui.Select(
             placeholder="Choose an option",
             min_values=1,
@@ -156,29 +219,28 @@ class AnonPolling(discord.ui.View):
         return select
 
     async def select_callback(self, interaction: discord.Interaction):
-        """Runs when user selects an option
-
-        Args:
-            interaction (discord.Interaction): Interaction object
-        """
         user_id = interaction.user.id
         selected_values = interaction.data["values"]
 
         if user_id in self.user_votes:
             for value in self.user_votes[user_id]:
                 self.votes[value] -= 1
-
         for value in selected_values:
             self.votes[value] += 1
-
         self.user_votes[user_id] = selected_values
+
+        update_poll_votes(
+            message_id=self.message.id if self.message else 0,
+            votes=self.votes,
+            user_votes=self.user_votes,
+        )
 
         await interaction.response.send_message(
             f"You selected: {', '.join(selected_values)}", ephemeral=True
         )
 
     async def on_timeout(self):
-        """Called when vote is done/timed out"""
+        log.info("Poll timeout triggered for: %s", self.question)
         for item in self.children:
             item.disabled = True
         expiration_str = discord.utils.format_dt(self.expiration, style="R")
@@ -194,28 +256,85 @@ class AnonPolling(discord.ui.View):
             )
             results += f"\n**Winner(s)**: {', '.join(winners)} ({max_votes} vote(s))"
 
-        await self.message.edit(
-            content=f"**{self.question}**\nPoll closed: {expiration_str}\n\n**Results**:\n{results}",
-            view=self,
-        )
+        try:
+            await self.message.edit(
+                content=f"**{self.question}**\nPoll closed: {expiration_str}\n\n**Results**:\n{results}",
+                view=self,
+            )
+            remove_poll_data(self.message.id)
+        except Exception as e:
+            log.error("Error in on_timeout: %s", str(e))
 
 
 class Polls(commands.Cog):
-    """Poll command"""
-
     def __init__(self, bot):
         self.bot = bot
+        self._last_session_id = None
+
+    async def restore_polls(self, session_id: str):
+        """Restore active polls after connect or resume."""
+        log.info("Starting poll restoration for session: %s", session_id)
+        polls = load_polls()
+        now = datetime.datetime.now(datetime.timezone.utc)
+        for poll_data in polls.values():
+            expiration = datetime.datetime.fromisoformat(poll_data["expiration"])
+            if expiration > now:
+                timeout = (expiration - now).total_seconds()
+                options = [
+                    discord.SelectOption(label=opt) for opt in poll_data["options"]
+                ]
+                view = AnonPolling(
+                    options=options,
+                    allow_multiple=poll_data["allow_multiple"],
+                    timeout=timeout,
+                    question=poll_data["question"],
+                    expiration=expiration,
+                )
+                view.votes = defaultdict(int, poll_data["votes"])
+                view.user_votes = {
+                    int(k): v for k, v in poll_data["user_votes"].items()
+                }
+                try:
+                    channel = self.bot.get_channel(poll_data["channel_id"])
+                    if channel:
+                        message = await channel.fetch_message(poll_data["message_id"])
+                        view.message = message
+                        await message.edit(view=view)
+                        log.info("Restored poll: %s", poll_data["question"])
+                    else:
+                        log.error(
+                            "Channel %s not found for poll %s",
+                            poll_data["channel_id"],
+                            poll_data["question"],
+                        )
+                        remove_poll_data(poll_data["message_id"])
+                except Exception as e:
+                    log.error(
+                        "Failed to restore poll %s: %s", poll_data["question"], str(e)
+                    )
+                    remove_poll_data(poll_data["message_id"])
+        log.info("Poll restoration complete")
+
+    @commands.Cog.listener()
+    async def on_connect(self):
+        """Restore polls on WebSocket connect."""
+        session_id = getattr(self.bot, "session_id", "unknown")
+        if session_id != self._last_session_id:
+            await self.restore_polls(session_id)
+            self._last_session_id = session_id
+
+    @commands.Cog.listener()
+    async def on_resume(self):
+        """Restore polls after WebSocket resume."""
+        session_id = getattr(self.bot, "session_id", "unknown")
+        log.info("Resumed session: %s", session_id)
+        await self.restore_polls(session_id)
 
     @commands.slash_command(description="Create a poll")
     @commands.has_permissions(administrator=True)
     async def poll(self, ctx: discord.ApplicationContext):
-        """Create a poll
-
-        Args:
-            ctx (discord.ApplicationContext): context application
-        """
         modal = PollModal()
-        await ctx.interaction.response.send_modal(modal)
+        await ctx.response.send_modal(modal)
 
 
 def setup(bot):
