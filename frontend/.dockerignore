@@ -1,13 +1,7 @@
-# maya
-.env
-env/
 README.md
 LICENSE
 .vscode/
-# Maya doesn't use this. 
-# The function calls are stored on OpenAI directly.
-# This is just used as a reference.
-function_calls.json
+.venv/
 
 # docker
 Dockerfile
