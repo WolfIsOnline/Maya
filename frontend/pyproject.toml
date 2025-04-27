@@ -1,19 +1,25 @@
 [tool.poetry]
 name = "maya-frontend"
 version = "3.0.0"
-description = "Discord Frontend"
+description = "Discord Frontend for Maya"
 authors = ["Cameron Kauffman <clk9699@gmail.com>"]
 license = "CC BY-NC-ND 4.0"
 readme = "README.md"
+packages = [{ include = "maya" }]
+
+[tool.poetry.scripts]
+frontend = "maya.__main__:main"
 
 [tool.poetry.dependencies]
 python = "^3.12"
 py-cord = {extras = ["speed"], version = "^2.6.1"}
-dotenv = "^0.9.9"
+python-dotenv = "^1.0.0"
 colorlog = "^6.9.0"
 requests = "^2.32.3"
 
+[tool.poetry.dev-dependencies]
+pytest = "^7.4.0"
 
 [build-system]
-requires = ["poetry-core"]
+requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
