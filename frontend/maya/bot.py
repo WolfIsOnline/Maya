@@ -5,8 +5,8 @@ import requests
 
 from dotenv import load_dotenv, find_dotenv
 
-import frontend.maya as maya
-from frontend.maya.core.logs import log
+import maya
+from maya.core.logs import log
 
 load_dotenv(find_dotenv())
 
@@ -17,7 +17,7 @@ bot = discord.Bot(debug_guilds=[DEBUG_GUILD], owner_id=int(maya.OWNER_ID))
 
 extensions = ["user", "polls", "dev"]
 for ext in extensions:
-    bot.load_extension(f"frontend.maya.extensions.{ext}")
+    bot.load_extension(f"maya.extensions.{ext}")
 
 
 @bot.event

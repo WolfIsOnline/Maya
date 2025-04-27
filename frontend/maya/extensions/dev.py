@@ -7,7 +7,7 @@ from discord import guild_only, option
 from discord.ext import commands
 from discord.commands import SlashCommandGroup
 
-from frontend.maya import BACKEND_URL
+from maya import BACKEND_URL
 
 
 class Dev(commands.Cog):
@@ -47,7 +47,7 @@ class Dev(commands.Cog):
         """
         response = ""
         try:
-            self.bot.unload_extension(f"frontend.maya.extensions.{ext}")
+            self.bot.unload_extension(f"maya.extensions.{ext}")
             response = f"{ext} unloaded"
         except discord.ExtensionError as e:
             response = e
@@ -65,7 +65,7 @@ class Dev(commands.Cog):
         """
         response = ""
         try:
-            self.bot.load_extension(f"frontend.maya.extensions.{ext}")
+            self.bot.load_extension(f"maya.extensions.{ext}")
             response = f"{ext} loaded"
         except discord.ExtensionError as e:
             response = e
@@ -83,7 +83,7 @@ class Dev(commands.Cog):
         """
         response = ""
         try:
-            self.bot.reload_extension(f"frontend.maya.extensions.{ext}")
+            self.bot.reload_extension(f"maya.extensions.{ext}")
             response = f"{ext} reloaded"
         except discord.ExtensionError as e:
             response = e
