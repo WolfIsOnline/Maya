@@ -7,31 +7,13 @@
 
 
 <!-- PROJECT LOGO -->
-<h3 align="center">MayaAI</h3>
+<h3 align="center">Maya v3</h3>
   <p align="center">
-    Maya (formerly Wolfie) is an advanced AI assistant crafted to provide engaging, 
-    continuous conversations with a personal touch. 
-    She combines a friendly tone with the unique capability to recall past interactions, 
-    offering insightful responses that enrich dialogue. Maya's inquisitive nature invites users to more meaningful exchanges, 
-    setting the stage for a conversational experience that feels both intuitive and pleasantly human-like.
-    <br />
-    <br />
     <a href="https://github.com/wolfisonline/Maya/issues">Report Bug</a>
     ·
     <a href="https://github.com/wolfisonline/Maya/issues">Request Feature</a>
   </p>
 </div>
-
-### Built With
-
-* [![Hikari][Hikari-icon]][Hikari-url]
-* [![Lightbulb][Lightbulb-icon]][Lightbulb-url]
-
-<!-- ROADMAP -->
-## Roadmap
-
-- [ ] Expanding memory capabilities
-- [ ] Integrate other API's
 
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
@@ -48,12 +30,6 @@
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 [linkedin-url]: https://linkedin.com/in/cameron-kauffman
 [product-screenshot]: images/screenshot.png
-
-[Hikari-url]: https://www.hikari-py.dev/
-[Hikari-icon]: https://img.shields.io/badge/hikari-41377c?style=for-the-badge
-
-[Lightbulb-url]: https://www.hikari-py.dev/
-[Lightbulb-icon]: https://img.shields.io/badge/lightbulb-ffed00?style=for-the-badge
 
 [code-style]: https://pypi.org/project/black/
 [code-style-url]: https://img.shields.io/badge/code%20style-black-000000.svg?style=for-the-badge
