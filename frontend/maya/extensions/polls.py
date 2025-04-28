@@ -2,20 +2,41 @@ import datetime
 import re
 import json
 import os
+import fcntl
 from collections import defaultdict
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from maya.core.logs import log
 
 POLL_FILE = "polls.json"
 
 
+def lock_file(file_obj):
+    """Lock a file using fcntl (Unix) or no-op on unsupported platforms."""
+    try:
+        fcntl.flock(file_obj.fileno(), fcntl.LOCK_EX)
+    except (AttributeError, OSError):
+        pass
+
+
+def unlock_file(file_obj):
+    """Unlock a file."""
+    try:
+        fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
+    except (AttributeError, OSError):
+        pass
+
+
 def load_polls():
-    """Load poll data from JSON file."""
+    """Load poll data from JSON file with locking."""
     if os.path.exists(POLL_FILE):
         with open(POLL_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            lock_file(f)
+            try:
+                return json.load(f)
+            finally:
+                unlock_file(f)
     return {}
 
 
@@ -29,7 +50,7 @@ def save_poll_data(
     votes,
     user_votes,
 ):
-    """Save poll data to JSON file."""
+    """Save poll data to JSON file with locking."""
     polls = load_polls()
     polls[str(message_id)] = {
         "message_id": message_id,
@@ -42,11 +63,18 @@ def save_poll_data(
         "user_votes": {str(k): v for k, v in user_votes.items()},
     }
     with open(POLL_FILE, "w", encoding="utf-8") as f:
-        json.dump(polls, f, indent=2)
+        lock_file(f)
+        try:
+            json.dump(polls, f, indent=2)
+        except Exception as e:
+            log.error("Failed to save polls to JSON: %s", str(e))
+            raise
+        finally:
+            unlock_file(f)
 
 
 def update_poll_votes(message_id, votes, user_votes):
-    """Update votes in JSON file."""
+    """Update votes in JSON file with locking."""
     polls = load_polls()
     if str(message_id) in polls:
         polls[str(message_id)]["votes"] = dict(votes)
@@ -54,16 +82,31 @@ def update_poll_votes(message_id, votes, user_votes):
             str(k): v for k, v in user_votes.items()
         }
         with open(POLL_FILE, "w", encoding="utf-8") as f:
-            json.dump(polls, f, indent=2)
+            lock_file(f)
+            try:
+                json.dump(polls, f, indent=2)
+            except Exception as e:
+                log.error("Failed to update poll votes in JSON: %s", str(e))
+                raise
+            finally:
+                unlock_file(f)
 
 
 def remove_poll_data(message_id):
-    """Remove poll data from JSON file."""
+    """Remove poll data from JSON file with locking."""
     polls = load_polls()
     if str(message_id) in polls:
         del polls[str(message_id)]
         with open(POLL_FILE, "w", encoding="utf-8") as f:
-            json.dump(polls, f, indent=2)
+            lock_file(f)
+            try:
+                json.dump(polls, f, indent=2)
+                log.info("Removed poll %s from JSON", message_id)
+            except Exception as e:
+                log.error("Failed to remove poll %s from JSON: %s", message_id, str(e))
+                raise
+            finally:
+                unlock_file(f)
 
 
 class PollModal(discord.ui.Modal):
@@ -166,7 +209,9 @@ class PollModal(discord.ui.Modal):
             select_options, allow_multiple, duration, question, expiration
         )
         await interaction.response.send_message(
-            f"**{question}**\nPoll ends: {expiration_str}", view=view, ephemeral=False
+            f"**{question}**\nPoll ends: {expiration_str}\n\n**Total votes**: 0",
+            view=view,
+            ephemeral=False,
         )
         view.message = await interaction.original_response()
 
@@ -235,6 +280,17 @@ class AnonPolling(discord.ui.View):
             user_votes=self.user_votes,
         )
 
+        expiration_str = discord.utils.format_dt(self.expiration, style="R")
+        total_votes = sum(self.votes.values())
+        try:
+            await self.message.edit(
+                content=f"**{self.question}**\nPoll ends: {expiration_str}\n\n**Total votes**: {total_votes}",
+                view=self,
+            )
+            log.info("Updated poll message with total votes for: %s", self.question)
+        except Exception as e:
+            log.error("Error updating poll message for %s: %s", self.question, str(e))
+
         await interaction.response.send_message(
             f"You selected: {', '.join(selected_values)}", ephemeral=True
         )
@@ -251,10 +307,10 @@ class AnonPolling(discord.ui.View):
             max_votes = max(self.votes.values())
             winners = [opt for opt, count in self.votes.items() if count == max_votes]
             results = "\n".join(
-                f"{opt}: {self.votes[opt]} vote(s)"
+                f"{opt}: {self.votes[opt]} votes"
                 for opt in [o.label for o in self.options]
             )
-            results += f"\n**Winner(s)**: {', '.join(winners)} ({max_votes} vote(s))"
+            results += f"\n**Winners**: {', '.join(winners)} ({max_votes} votes)"
 
         try:
             await self.message.edit(
@@ -270,6 +326,8 @@ class Polls(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._last_session_id = None
+        self.invalid_polls = set()
+        self.cleanup_polls.start()
 
     async def restore_polls(self, session_id: str):
         """Restore active polls after connect or resume."""
@@ -295,25 +353,54 @@ class Polls(commands.Cog):
                     int(k): v for k, v in poll_data["user_votes"].items()
                 }
                 try:
-                    channel = self.bot.get_channel(poll_data["channel_id"])
-                    if channel:
-                        message = await channel.fetch_message(poll_data["message_id"])
-                        view.message = message
-                        await message.edit(view=view)
-                        log.info("Restored poll: %s", poll_data["question"])
-                    else:
-                        log.error(
-                            "Channel %s not found for poll %s",
-                            poll_data["channel_id"],
-                            poll_data["question"],
-                        )
-                        remove_poll_data(poll_data["message_id"])
+                    channel = await self.bot.fetch_channel(poll_data["channel_id"])
+                    message = await channel.fetch_message(poll_data["message_id"])
+                    view.message = message
+                    total_votes = sum(view.votes.values())
+                    expiration_str = discord.utils.format_dt(expiration, style="R")
+                    await message.edit(
+                        content=f"**{poll_data['question']}**\nPoll ends: {expiration_str}\n\n**Total votes**: {total_votes}",
+                        view=view,
+                    )
+                    log.info("Restored poll: %s", poll_data["question"])
+                except (
+                    discord.NotFound,
+                    discord.Forbidden,
+                    discord.HTTPException,
+                ) as e:
+                    log.error(
+                        "Failed to restore poll %s (channel %s): %s",
+                        poll_data["question"],
+                        poll_data["channel_id"],
+                        str(e),
+                    )
+                    self.invalid_polls.add(poll_data["message_id"])
                 except Exception as e:
                     log.error(
-                        "Failed to restore poll %s: %s", poll_data["question"], str(e)
+                        "Unexpected error restoring poll %s: %s",
+                        poll_data["question"],
+                        str(e),
                     )
-                    remove_poll_data(poll_data["message_id"])
+                    self.invalid_polls.add(poll_data["message_id"])
         log.info("Poll restoration complete")
+
+    @tasks.loop(hours=1.0)
+    async def cleanup_polls(self):
+        """Periodically clean up invalid polls from JSON."""
+        if not self.invalid_polls:
+            return
+        log.info("Cleaning up %s invalid polls", len(self.invalid_polls))
+        for message_id in list(self.invalid_polls):
+            try:
+                remove_poll_data(message_id)
+                self.invalid_polls.remove(message_id)
+            except Exception as e:
+                log.error("Failed to clean up poll %s: %s", message_id, str(e))
+
+    @cleanup_polls.before_loop
+    async def before_cleanup_polls(self):
+        """Wait for bot to be ready before starting cleanup task."""
+        await self.bot.wait_until_ready()
 
     @commands.Cog.listener()
     async def on_connect(self):
@@ -324,7 +411,7 @@ class Polls(commands.Cog):
             self._last_session_id = session_id
 
     @commands.Cog.listener()
-    async def on_resume(self):
+    async def on_resumed(self):
         """Restore polls after WebSocket resume."""
         session_id = getattr(self.bot, "session_id", "unknown")
         log.info("Resumed session: %s", session_id)
