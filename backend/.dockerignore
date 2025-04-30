@@ -1,0 +1,15 @@
+README.md
+LICENSE
+.vscode/
+.venv/
+.env_example
+
+# docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# git
+.git
+.gitattributes
+.gitignore
