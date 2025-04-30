@@ -1,5 +1,4 @@
 import asyncio
-import os
 import discord
 import requests
 
@@ -10,10 +9,7 @@ from maya.core.logs import log
 
 load_dotenv(find_dotenv())
 
-DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
-DEBUG_GUILD = os.environ.get("DEBUG_GUILD")
-
-bot = discord.Bot(debug_guilds=[DEBUG_GUILD], owner_id=int(maya.OWNER_ID))
+bot = discord.Bot(debug_guilds=[maya.DEBUG_GUILD], owner_id=int(maya.OWNER_ID))
 
 extensions = ["user", "polls", "dev"]
 for ext in extensions:
@@ -56,7 +52,7 @@ async def on_guild_remove(guild: discord.Guild):
 async def main():
     """Start maya"""
     async with bot:
-        await bot.start(DISCORD_TOKEN)
+        await bot.start(maya.DISCORD_TOKEN)
 
 
 if __name__ == "__main__":
