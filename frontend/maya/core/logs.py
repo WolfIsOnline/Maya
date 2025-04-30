@@ -1,7 +1,7 @@
 import logging
 from colorlog import ColoredFormatter
 
-LOG_LEVEL = logging.INFO
+LOG_LEVEL = logging.DEBUG
 
 
 def setup_logging():
@@ -28,7 +28,7 @@ def setup_logging():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-    for name in ["discord", "discord.http"]:
+    for name in ["maya.discord"]:  #
         discord_logger = logging.getLogger(name)
         discord_logger.setLevel(LOG_LEVEL)
         discord_logger.handlers = [handler]
