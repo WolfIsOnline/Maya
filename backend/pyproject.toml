@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "maya-backend"
+version = "3.0.0"
+description = "Maya Backend"
+authors = ["Cameron Kauffman <clk9699@gmail.com>"]
+license = "CC BY-NC-ND 4.0"
+readme = "README.md"
+packages = [{ include = "maya" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.115.12"
+uvicorn = "^0.34.0"
+colorlog = "^6.9.0"
+mysql-connector-python = "^9.2.0"
+python-dotenv = "^1.1.0"
+pydantic = "^2.11.2"
+
+[tool.poetry.scripts]
+backend = "maya.main:main"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
