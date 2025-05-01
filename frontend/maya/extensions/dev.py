@@ -33,7 +33,7 @@ class Dev(commands.Cog):
             timeout=10,
         )
         response = f"API Response: ```Content: {request.content}\nStatus Code: {request.content}```"
-        await ctx.respond(embed=await self._dev_response(response))
+        await ctx.respond(embed=self._dev_response(response))
 
     @commands.is_owner()
     @smg_dev.command(description="")
