@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from dotenv import load_dotenv
 
-from maya import MARIADB_HOST, MARIADB_USER, MARIADB_PASSWORD, MARIADB_DB
+from maya import MARIADB_HOST, MARIADB_USER, MARIADB_PASSWORD, MARIADB_DB, MARIADB_PORT
 
 from maya.logs import log
 
@@ -27,6 +27,7 @@ class Database:
             "user": MARIADB_USER,
             "password": MARIADB_PASSWORD,
             "database": MARIADB_DB,
+            "port": MARIADB_PORT,
         }
 
     def init(self):

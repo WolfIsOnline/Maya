@@ -21,6 +21,7 @@ MARIADB_HOST = os.getenv("MARIADB_HOST")
 MARIADB_USER = os.getenv("MARIADB_USER")
 MARIADB_PASSWORD = os.getenv("MARIADB_PASSWORD")
 MARIADB_DB = os.getenv("MARIADB_DB")
+MARIADB_PORT = os.getenv("MARIADB_PORT")
 
 MAYA_HOST = os.getenv("MAYA_HOST")
 MAYA_PORT = int(os.getenv("MAYA_PORT"))
