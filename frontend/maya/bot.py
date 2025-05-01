@@ -11,7 +11,7 @@ load_dotenv(find_dotenv())
 
 bot = discord.Bot(debug_guilds=[maya.DEBUG_GUILD], owner_id=int(maya.OWNER_ID))
 
-extensions = ["user", "polls", "dev"]
+extensions = ["user", "polls", "dev", "colors"]
 for ext in extensions:
     bot.load_extension(f"maya.extensions.{ext}")
 
@@ -21,6 +21,16 @@ async def on_ready():
     """Called when bot is ready"""
     log.info("%s ready....", (bot.user))
     log.info("-----------")
+    await health_check()
+
+
+async def health_check():
+    """Make a health check request to the API server"""
+    response = requests.get(f"{maya.BACKEND_URL}/status", timeout=10)
+    if response.status_code == 200:
+        log.info("Backend API is reachable")
+    else:
+        log.error("Backend API is unreachable : %s", response.status_code)
 
 
 @bot.event
