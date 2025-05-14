@@ -17,7 +17,7 @@ from maya.logs import log
 load_dotenv()
 
 
-class Database:
+class SQL:
     """Handles MYSQL pool connections"""
 
     def __init__(self):
@@ -30,6 +30,8 @@ class Database:
             "port": MARIADB_PORT,
         }
 
+    # this is pointless right now
+    # since Connect() class handles connection
     def init(self):
         """Connect to a MYSQL Pool"""
         try:
@@ -61,7 +63,9 @@ class Database:
 
         connection = None
         try:
-            connection = Connect(autocommit=True, **self.db_config)
+            connection = Connect(
+                autocommit=True, **self.db_config, pool_name="maya", pool_size=5
+            )
             log.debug("Connected to pool %s", connection.connection_id)
             cursor = connection.cursor()
             yield cursor
